@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Code Grabber - Hoppecke</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --panel-2: #232731;
+    --border: #2d313c;
+    --text: #e6e8ee;
+    --muted: #8a92a5;
+    --accent: #4ade80;
+    --accent-2: #22d3ee;
+    --danger: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px; line-height: 1.4;
+    min-height: 100vh;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: linear-gradient(180deg, var(--panel) 0%, rgba(26,29,36,0.95) 100%);
+    backdrop-filter: blur(8px);
+    padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 6px; font-size: 17px; font-weight: 600; letter-spacing: 0.2px; }
+  header p { margin: 0; color: var(--muted); font-size: 12px; }
+  main { padding: 14px 12px 120px; max-width: 640px; margin: 0 auto; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 14px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted);
+  }
+  button {
+    font: inherit; border: 0; border-radius: 10px; padding: 12px 14px;
+    cursor: pointer; font-weight: 600; transition: transform 0.05s, filter 0.15s;
+    width: 100%;
+  }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #041b0b; }
+  .btn-secondary { background: var(--accent-2); color: #041a1f; }
+  .btn-ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--danger); color: #2a0000; }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  textarea {
+    width: 100%; min-height: 110px; padding: 10px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; resize: vertical;
+  }
+  .progress-wrap {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+    height: 18px; overflow: hidden; position: relative; margin-top: 8px;
+  }
+  .progress-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.3s ease;
+  }
+  .progress-label {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #000; mix-blend-mode: screen;
+  }
+  #codeList {
+    list-style: none; padding: 0; margin: 0;
+    max-height: 55vh; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2);
+  }
+  #codeList li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-family: ui-monospace, Menlo, monospace; font-size: 14px;
+  }
+  #codeList li:last-child { border-bottom: 0; }
+  #codeList .num { color: var(--muted); font-size: 11px; min-width: 42px; }
+  #codeList .code { flex: 1; letter-spacing: 0.5px; color: var(--accent); }
+  #codeList .dup { color: var(--warn); }
+  #codeList .del {
+    background: transparent; color: var(--danger); border: 0;
+    width: auto; padding: 4px 8px; font-size: 16px; line-height: 1;
+  }
+  .empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
+  #ocrStatus {
+    font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px;
+  }
+  #preview {
+    width: 100%; max-height: 180px; object-fit: contain; border-radius: 8px;
+    margin-top: 8px; display: none; background: #000;
+  }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #041b0b; padding: 10px 18px;
+    border-radius: 999px; font-weight: 700; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s, bottom 0.2s;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; bottom: 30px; }
+  input[type="file"] { display: none; }
+  .target-input {
+    width: 70px; padding: 6px 8px; font-size: 13px; text-align: center;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .target-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ Code Grabber</h1>
+  <p>OCR + incolla per estrarre codici <code>H...</code></p>
+</header>
+
+<main>
+
+  <div class="card">
+    <div class="target-row">
+      <h2 style="margin:0">Progresso</h2>
+      <label style="font-size:12px;color:var(--muted)">
+        Totale:
+        <input id="target" class="target-input" type="number" min="1" value="80">
+      </label>
+    </div>
+    <div class="progress-wrap">
+      <div id="progressBar" class="progress-bar"></div>
+      <div id="progressLabel" class="progress-label">0 / 80</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📷 Modalità OCR</h2>
+    <button id="btnCamera" class="btn-primary">Inquadra Codice</button>
+    <input id="fileInput" type="file" accept="image/*" capture="environment">
+    <img id="preview" alt="anteprima">
+    <div id="ocrStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>📋 Modalità Incolla</h2>
+    <textarea id="pasteArea" placeholder="Incolla qui l'intera colonna Excel o il testo copiato..."></textarea>
+    <div style="height:8px"></div>
+    <button id="btnExtract" class="btn-secondary">Estrai tutti i codici</button>
+  </div>
+
+  <div class="card">
+    <h2>✅ Codici estratti (<span id="count">0</span>)</h2>
+    <ul id="codeList"><li class="empty">Nessun codice ancora. Scatta una foto o incolla il testo.</li></ul>
+    <div style="height:10px"></div>
+    <div class="btn-row">
+      <button id="btnCopy" class="btn-primary">Copia tutto</button>
+      <button id="btnClear" class="btn-ghost">Svuota</button>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ========================================================
+   CODE GRABBER - single-file tool
+   Estrae codici nel formato (H + 10-14 cifre) da:
+     - foto via Tesseract.js (OCR offline dopo primo caricamento)
+     - testo incollato
+   ======================================================== */
+
+// Regex: "H" (o confusioni comuni) seguita da 10-14 alfanumerici.
+// Catturiamo dentro o fuori parentesi. Dopo, normalizziamo confusioni OCR.
+const CODE_REGEX = /\(?\s*([HMN])[\s\-]*([A-Z0-9OIlSB]{10,14})\s*\)?/gi;
+
+const state = {
+  codes: [],           // array di stringhe pulite
+  target: 80,
+  worker: null,        // Tesseract worker
+  workerReady: false,
+};
+
+// ---------- Helpers ----------
+const $ = (id) => document.getElementById(id);
+
+function toast(msg, ms=1600) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+function normalizeCode(raw) {
+  // Converte tipici errori OCR nella parte numerica: O->0, I/l->1, S->5, B->8
+  // La lettera iniziale resta una lettera.
+  if (!raw) return null;
+  const letter = 'H'; // forziamo H, il formato atteso
+  const rest = raw.slice(1)
+    .toUpperCase()
+    .replace(/O/g, '0')
+    .replace(/[IL]/g, '1')
+    .replace(/S/g, '5')
+    .replace(/B/g, '8')
+    .replace(/[^0-9]/g, '');
+  if (rest.length < 10 || rest.length > 14) return null;
+  return letter + rest;
+}
+
+function extractCodes(text) {
+  if (!text) return [];
+  const upper = text.toUpperCase();
+  const found = [];
+  let m;
+  const re = new RegExp(CODE_REGEX.source, 'gi');
+  while ((m = re.exec(upper)) !== null) {
+    const candidate = (m[1] + m[2]).replace(/\s+/g, '');
+    const n = normalizeCode(candidate);
+    if (n) found.push(n);
+  }
+  return found;
+}
+
+function addCodes(newCodes) {
+  let added = 0;
+  for (const c of newCodes) {
+    if (!state.codes.includes(c)) {
+      state.codes.push(c);
+      added++;
+    }
+  }
+  render();
+  return added;
+}
+
+function render() {
+  $('count').textContent = state.codes.length;
+  const list = $('codeList');
+  if (state.codes.length === 0) {
+    list.innerHTML = '<li class="empty">Nessun codice ancora. Scatta una foto o incolla il testo.</li>';
+  } else {
+    list.innerHTML = state.codes.map((c, i) =>
+      `<li>
+         <span class="num">${i+1}/${state.target}</span>
+         <span class="code">${c}</span>
+         <button class="del" data-i="${i}" title="Rimuovi">×</button>
+       </li>`
+    ).join('');
+  }
+  const pct = Math.min(100, (state.codes.length / state.target) * 100);
+  $('progressBar').style.width = pct + '%';
+  $('progressLabel').textContent = `${state.codes.length} / ${state.target}`;
+  save();
+}
+
+function save() {
+  try {
+    localStorage.setItem('codeGrabber', JSON.stringify({
+      codes: state.codes, target: state.target
+    }));
+  } catch(e) {}
+}
+function load() {
+  try {
+    const raw = localStorage.getItem('codeGrabber');
+    if (raw) {
+      const d = JSON.parse(raw);
+      state.codes = d.codes || [];
+      state.target = d.target || 80;
+      $('target').value = state.target;
+    }
+  } catch(e) {}
+}
+
+// ---------- OCR ----------
+async function ensureWorker() {
+  if (state.workerReady) return state.worker;
+  $('ocrStatus').textContent = '⏳ Carico modello OCR (solo prima volta, ~3 MB)...';
+  const worker = await Tesseract.createWorker('eng', 1, {
+    logger: (m) => {
+      if (m.status && m.progress != null) {
+        $('ocrStatus').textContent = `${m.status} ${(m.progress*100).toFixed(0)}%`;
+      }
+    }
+  });
+  // Restringi l'alfabeto ai caratteri attesi: lettere maiuscole + cifre + parentesi
+  await worker.setParameters({
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()',
+  });
+  state.worker = worker;
+  state.workerReady = true;
+  return worker;
+}
+
+async function runOCR(file) {
+  const url = URL.createObjectURL(file);
+  const img = $('preview');
+  img.src = url;
+  img.style.display = 'block';
+  try {
+    const worker = await ensureWorker();
+    $('ocrStatus').textContent = '🔍 Riconoscimento in corso...';
+    const { data } = await worker.recognize(url);
+    const text = (data && data.text) || '';
+    const codes = extractCodes(text);
+    if (codes.length === 0) {
+      $('ocrStatus').innerHTML =
+        `⚠️ Nessun codice riconosciuto. Testo OCR: <i>${(text || '').trim().slice(0,80)}</i>`;
+      toast('Nessun codice trovato');
+    } else {
+      const added = addCodes(codes);
+      $('ocrStatus').textContent = `✅ Trovato: ${codes.join(', ')}`;
+      toast(added ? `+${added} codice${added>1?'i':''}` : 'Già presente');
+    }
+  } catch (e) {
+    $('ocrStatus').textContent = '❌ Errore OCR: ' + e.message;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// ---------- Event wiring ----------
+$('btnCamera').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) runOCR(f);
+  e.target.value = '';
+});
+
+$('btnExtract').addEventListener('click', () => {
+  const text = $('pasteArea').value;
+  const codes = extractCodes(text);
+  if (codes.length === 0) { toast('Nessun codice valido'); return; }
+  const added = addCodes(codes);
+  toast(`+${added} nuovi (su ${codes.length} trovati)`);
+  $('pasteArea').value = '';
+});
+
+$('btnCopy').addEventListener('click', async () => {
+  if (state.codes.length === 0) { toast('Lista vuota'); return; }
+  const txt = state.codes.join('\n');
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast(`Copiati ${state.codes.length} codici ✓`);
+  } catch(e) {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
+    toast(`Copiati ${state.codes.length} codici ✓`);
+  }
+});
+
+$('btnClear').addEventListener('click', () => {
+  if (state.codes.length === 0) return;
+  if (confirm(`Cancellare tutti i ${state.codes.length} codici?`)) {
+    state.codes = [];
+    render();
+    toast('Lista svuotata');
+  }
+});
+
+$('codeList').addEventListener('click', (e) => {
+  const btn = e.target.closest('.del');
+  if (!btn) return;
+  const i = parseInt(btn.dataset.i, 10);
+  state.codes.splice(i, 1);
+  render();
+});
+
+$('target').addEventListener('change', (e) => {
+  const v = parseInt(e.target.value, 10);
+  state.target = (v > 0) ? v : 80;
+  e.target.value = state.target;
+  render();
+});
+
+// init
+load();
+render();
+</script>
+</body>
+</html>
